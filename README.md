@@ -49,14 +49,14 @@ npm run build
 
 ## MCP client configuration
 
-Inject credentials through the MCP client environment:
+For production use, start the published npm package with `npx`. No repository clone or local build is required. Inject credentials through the MCP client environment:
 
 ```json
 {
   "mcpServers": {
     "imageforge": {
-      "command": "node",
-      "args": ["/absolute/path/to/ImageForgeMCP/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "imageforge-mcp"],
       "env": {
         "OPENAI_BASE_URL": "https://your-openai-compatible-gateway.example/v1",
         "OPENAI_API_KEY": "your-token",
@@ -66,6 +66,8 @@ Inject credentials through the MCP client environment:
   }
 }
 ```
+
+`-y` allows `npx` to download or update the package without an interactive install prompt. Pin a specific version when reproducible deployments are required, for example `"imageforge-mcp@0.3.0"`.
 
 `OPENAI_BASE_URL` defaults to `https://api.openai.com/v1`. Set it to the `/v1` root of your New API, CLI Proxy API, or other OpenAI-compatible gateway. ImageForge MCP appends `/images/generations` or `/images/edits` as required.
 
@@ -208,14 +210,14 @@ npm run build
 
 ## MCP 客户端配置
 
-推荐通过 MCP 客户端环境变量注入密钥：
+生产环境推荐直接通过 `npx` 启动 npm 官方包，无需克隆仓库或在本地构建。通过 MCP 客户端环境变量注入密钥：
 
 ```json
 {
   "mcpServers": {
     "imageforge": {
-      "command": "node",
-      "args": ["/absolute/path/to/ImageForgeMCP/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "imageforge-mcp"],
       "env": {
         "OPENAI_BASE_URL": "https://你的-OpenAI-兼容网关域名/v1",
         "OPENAI_API_KEY": "你的令牌",
@@ -225,6 +227,8 @@ npm run build
   }
 }
 ```
+
+`-y` 允许 `npx` 在没有交互式安装提示的情况下下载或更新包。如果部署需要固定版本，可将包名写成 `"imageforge-mcp@0.3.0"`。
 
 `OPENAI_BASE_URL` 默认是 `https://api.openai.com/v1`。使用 New API、CLI Proxy API 或其他 OpenAI 兼容网关时，应填写到 `/v1` 为止；服务会根据请求追加 `/images/generations` 或 `/images/edits`。
 
