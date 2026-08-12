@@ -58,7 +58,6 @@ For production use, start the published npm package with `npx`. No repository cl
       "command": "npx",
       "args": ["-y", "imageforge-mcp"],
       "env": {
-        "OPENAI_BASE_URL": "https://your-openai-compatible-gateway.example/v1",
         "OPENAI_API_KEY": "your-token",
         "OPENAI_IMAGE_MODEL": "gpt-image-2"
       }
@@ -69,7 +68,13 @@ For production use, start the published npm package with `npx`. No repository cl
 
 `-y` allows `npx` to download or update the package without an interactive install prompt. Pin a specific version when reproducible deployments are required, for example `"imageforge-mcp@0.3.0"`.
 
-`OPENAI_BASE_URL` defaults to `https://api.openai.com/v1`. Set it to the `/v1` root of your New API, CLI Proxy API, or other OpenAI-compatible gateway. ImageForge MCP appends `/images/generations` or `/images/edits` as required.
+`OPENAI_BASE_URL` is optional. When it is unset, ImageForge MCP uses the official OpenAI endpoint `https://api.openai.com/v1`. Set it only when using New API, CLI Proxy API, or another OpenAI-compatible gateway:
+
+```json
+"OPENAI_BASE_URL": "https://your-openai-compatible-gateway.example/v1"
+```
+
+The value must point to the gateway's `/v1` root. ImageForge MCP appends `/images/generations` or `/images/edits` as required.
 
 Do not commit real API keys to Git or write them into shared configuration files.
 
@@ -219,7 +224,6 @@ npm run build
       "command": "npx",
       "args": ["-y", "imageforge-mcp"],
       "env": {
-        "OPENAI_BASE_URL": "https://你的-OpenAI-兼容网关域名/v1",
         "OPENAI_API_KEY": "你的令牌",
         "OPENAI_IMAGE_MODEL": "gpt-image-2"
       }
@@ -230,7 +234,13 @@ npm run build
 
 `-y` 允许 `npx` 在没有交互式安装提示的情况下下载或更新包。如果部署需要固定版本，可将包名写成 `"imageforge-mcp@0.3.0"`。
 
-`OPENAI_BASE_URL` 默认是 `https://api.openai.com/v1`。使用 New API、CLI Proxy API 或其他 OpenAI 兼容网关时，应填写到 `/v1` 为止；服务会根据请求追加 `/images/generations` 或 `/images/edits`。
+`OPENAI_BASE_URL` 是可选配置。不设置时，ImageForge MCP 默认使用 OpenAI 官方接口 `https://api.openai.com/v1`。只有使用 New API、CLI Proxy API 或其他 OpenAI 兼容网关时才需要设置：
+
+```json
+"OPENAI_BASE_URL": "https://你的-OpenAI-兼容网关域名/v1"
+```
+
+地址应填写到网关的 `/v1` 根路径为止，服务会根据请求追加 `/images/generations` 或 `/images/edits`。
 
 不要把真实 API Key 写入 Git 或其他共享配置文件。
 

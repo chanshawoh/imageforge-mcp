@@ -14,6 +14,16 @@ afterEach(() => {
 });
 
 describe("configuration", () => {
+  it("uses the official OpenAI API when OPENAI_BASE_URL is unset", () => {
+    delete process.env.OPENAI_BASE_URL;
+
+    expect(resolveConfig({ apiKey: "key" })).toEqual({
+      apiKey: "key",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-image-2",
+    });
+  });
+
   it("uses call values before environment values", () => {
     process.env.OPENAI_API_KEY = "environment-key";
     process.env.OPENAI_BASE_URL = "https://environment.example/v1";
