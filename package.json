@@ -1,16 +1,21 @@
 {
-  "name": "imageforge-mcp",
-  "version": "0.3.0",
-  "description": "Minimal MCP server for gpt-image-2 through the OpenAI Images API",
+  "name": "imageforge-mcp-mini",
+  "version": "0.1.0",
+  "description": "Web-standard ImageForge MCP server for Cloudflare Workers and gpt-image-2",
   "type": "module",
   "main": "dist/index.js",
-  "bin": {
-    "imageforge-mcp": "dist/index.js"
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "files": [
     "dist",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "wrangler.jsonc"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -18,15 +23,21 @@
     "check": "npm run build && npm test"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=20"
   },
+  "keywords": [
+    "mcp",
+    "cloudflare-workers",
+    "openai",
+    "gpt-image-2",
+    "image-generation"
+  ],
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/node": "^22.15.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   }

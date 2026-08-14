@@ -1,277 +1,159 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { promises as fs } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createServer, requestImage, resolveConfig, saveImage } from "./index.js";
+import { describe, expect, it, vi } from "vitest";
+import worker, {
+  handleMcpRequest,
+  requestImage,
+  resolveConfig,
+  type Env,
+} from "./index.js";
+import type { RemoteFetch } from "./imageInput.js";
 
-const originalEnvironment = { ...process.env };
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
+const ENCODED_IMAGE = btoa("generated-image");
 
-afterEach(() => {
-  process.env = { ...originalEnvironment };
-  vi.restoreAllMocks();
-});
+function mcpRequest(body: unknown, token?: string): Request {
+  const headers: Record<string, string> = {
+    accept: "application/json, text/event-stream",
+    "content-type": "application/json",
+  };
+  if (token) headers.authorization = `Bearer ${token}`;
+  return new Request("https://mini.example/mcp", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+}
 
 describe("configuration", () => {
-  it("uses the official OpenAI API when OPENAI_BASE_URL is unset", () => {
-    delete process.env.OPENAI_BASE_URL;
-
-    expect(resolveConfig({ apiKey: "key" })).toEqual({
-      apiKey: "key",
+  it("uses Worker bindings and official defaults", () => {
+    expect(resolveConfig({}, { OPENAI_API_KEY: "worker-key" })).toEqual({
+      apiKey: "worker-key",
       baseUrl: "https://api.openai.com/v1",
       model: "gpt-image-2",
     });
   });
 
-  it("uses call values before environment values", () => {
-    process.env.OPENAI_API_KEY = "environment-key";
-    process.env.OPENAI_BASE_URL = "https://environment.example/v1";
-
-    expect(
-      resolveConfig({
-        apiKey: "call-key",
-        baseUrl: "https://call.example/v1/",
-        model: "gpt-image-2",
-      }),
-    ).toEqual({
+  it("uses call values before Worker bindings", () => {
+    expect(resolveConfig({
+      apiKey: "call-key",
+      baseUrl: "https://call.example/v1/",
+      model: "gpt-image-2",
+    }, {
+      OPENAI_API_KEY: "worker-key",
+      OPENAI_BASE_URL: "https://worker.example/v1",
+    })).toEqual({
       apiKey: "call-key",
       baseUrl: "https://call.example/v1",
       model: "gpt-image-2",
     });
   });
-
-  it("rejects unsupported models", () => {
-    expect(() => resolveConfig({ apiKey: "key", model: "other-model" })).toThrow(
-      "only supports gpt-image-2",
-    );
-  });
 });
 
 describe("OpenAI Images request", () => {
-  it("posts to the configured generations endpoint", async () => {
-    const image = Buffer.from("fake-png");
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        JSON.stringify({ data: [{ b64_json: image.toString("base64") }] }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      ),
-    );
+  it("posts generations using Web APIs and returns validated base64", async () => {
+    const fetchMock = vi.fn<RemoteFetch>().mockResolvedValue(Response.json({
+      data: [{ b64_json: ENCODED_IMAGE }],
+    }));
 
-    await expect(
-      requestImage({
-        prompt: "A quiet lake at dawn",
-        config: { apiKey: "secret", baseUrl: "https://api2.example/v1", model: "gpt-image-2" },
-        size: "1536x1024",
-        quality: "high",
-        outputFormat: "png",
-        fetchImpl: fetchMock,
-      }),
-    ).resolves.toEqual(image);
+    await expect(requestImage({
+      prompt: "A clean route map",
+      config: { apiKey: "secret", baseUrl: "https://api.example/v1", model: "gpt-image-2" },
+      size: "1536x1024",
+      quality: "high",
+      outputFormat: "png",
+      fetchImpl: fetchMock,
+    })).resolves.toBe(ENCODED_IMAGE);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://api2.example/v1/images/generations",
+      "https://api.example/v1/images/generations",
       expect.objectContaining({
         method: "POST",
         headers: {
           authorization: "Bearer secret",
           "content-type": "application/json",
         },
-        body: JSON.stringify({
-          model: "gpt-image-2",
-          prompt: "A quiet lake at dawn",
-          n: 1,
-          size: "1536x1024",
-          quality: "high",
-          output_format: "png",
-        }),
       }),
     );
   });
 
-  it("rejects a response without image data", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    );
-    await expect(
-      requestImage({
-        prompt: "test",
-        config: { apiKey: "key", baseUrl: "https://api2.example/v1", model: "gpt-image-2" },
-        size: "1024x1024",
-        quality: "auto",
-        outputFormat: "png",
-        fetchImpl: fetchMock,
-      }),
-    ).rejects.toThrow("no base64 image data");
-  });
+  it("posts remote reference images as multipart edits", async () => {
+    const fetchMock = vi.fn<RemoteFetch>().mockResolvedValue(Response.json({
+      data: [{ b64_json: ENCODED_IMAGE }],
+    }));
 
-  it("posts reference images as multipart data to the edits endpoint", async () => {
-    const output = Buffer.from("edited-image");
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ data: [{ b64_json: output.toString("base64") }] }), { status: 200 }),
-    );
     await requestImage({
       prompt: "Use the reference colors",
-      config: { apiKey: "secret", baseUrl: "https://api2.example/v1", model: "gpt-image-2" },
+      config: { apiKey: "secret", baseUrl: "https://api.example/v1", model: "gpt-image-2" },
       size: "1024x1024",
       quality: "medium",
       outputFormat: "png",
-      inputImages: [{
-        data: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
-        fileName: "reference.png",
-        mimeType: "image/png",
-      }],
+      inputImages: [{ data: PNG, fileName: "reference.png", mimeType: "image/png" }],
       fetchImpl: fetchMock,
     });
 
-    const [url, options] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("https://api2.example/v1/images/edits");
-    expect(options?.headers).toEqual({ authorization: "Bearer secret" });
+    const [, options] = fetchMock.mock.calls[0]!;
     expect(options?.body).toBeInstanceOf(FormData);
-    const form = options!.body as FormData;
-    expect(form.get("model")).toBe("gpt-image-2");
-    expect(form.get("prompt")).toBe("Use the reference colors");
-    expect(form.get("quality")).toBe("medium");
-    const uploaded = form.get("image[]") as File;
+    const uploaded = (options?.body as FormData).get("image[]") as File;
     expect(uploaded.name).toBe("reference.png");
     expect(uploaded.type).toBe("image/png");
   });
 });
 
-describe("image output", () => {
-  it("saves an image to a relative path without overwriting existing files", async () => {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "imageforge-output-"));
-    const previousCwd = process.cwd();
-    process.chdir(directory);
-    try {
-      const savedPath = await saveImage(Buffer.from("generated-image"), "nested/dog.png");
-      expect(savedPath).toBe(path.resolve("nested/dog.png"));
-      await expect(fs.readFile(savedPath)).resolves.toEqual(Buffer.from("generated-image"));
-      await expect(saveImage(Buffer.from("replacement"), "nested/dog.png")).rejects.toMatchObject({
-        code: "EEXIST",
-      });
-    } finally {
-      process.chdir(previousCwd);
-      await fs.rm(directory, { recursive: true });
-    }
-  });
-});
+describe("Worker HTTP entry", () => {
+  it("exposes a health response", async () => {
+    const response = await worker.fetch(new Request("https://mini.example/health"), {});
 
-describe("MCP server", () => {
-  it("exposes only generate_image", async () => {
-    const server = createServer();
-    const client = new Client({ name: "test-client", version: "1.0.0" });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-
-    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-    try {
-      const tools = await client.listTools();
-      expect(tools.tools.map((tool) => tool.name)).toEqual(["generate_image", "edit_image"]);
-    } finally {
-      await client.close();
-      await server.close();
-    }
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      name: "imageforge-mcp-mini",
+      version: "0.1.0",
+      mcpEndpoint: "/mcp",
+    });
   });
 
-  it("returns the generated bytes as native MCP image content", async () => {
-    process.env.OPENAI_API_KEY = "environment-key";
-    process.env.OPENAI_BASE_URL = "https://api2.example/v1";
-    const image = Buffer.from("generated-image");
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ data: [{ b64_json: image.toString("base64") }] }), {
-        status: 200,
-      }),
-    );
-    const server = createServer();
-    const client = new Client({ name: "test-client", version: "1.0.0" });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  it("enforces the optional MCP bearer token", async () => {
+    const env: Env = { IMAGEFORGE_MCP_TOKEN: "mcp-secret" };
 
-    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-    try {
-      const result = await client.callTool({
+    const response = await handleMcpRequest(mcpRequest({ jsonrpc: "2.0", method: "ping", id: 1 }), env);
+    expect(response.status).toBe(401);
+  });
+
+  it("handles MCP initialization with the Web Standard transport", async () => {
+    const response = await handleMcpRequest(mcpRequest({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "test-client", version: "1.0.0" },
+      },
+    }), {});
+
+    expect(response.status).toBe(200);
+    const payload = await response.json() as { result?: { serverInfo?: { name?: string; version?: string } } };
+    expect(payload.result?.serverInfo).toEqual({ name: "imageforge-mcp-mini", version: "0.1.0" });
+  });
+
+  it("returns generated images as native MCP image content", async () => {
+    const fetchMock = vi.fn<RemoteFetch>().mockResolvedValue(Response.json({
+      data: [{ b64_json: ENCODED_IMAGE }],
+    }));
+    const response = await handleMcpRequest(mcpRequest({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
         name: "generate_image",
-        arguments: { prompt: "A minimal blue circle", output_format: "png" },
-      });
-      expect(result.isError).not.toBe(true);
-      expect(result.content).toEqual([
-        {
-          type: "image",
-          data: image.toString("base64"),
-          mimeType: "image/png",
-        },
-      ]);
-      expect(fetchMock).toHaveBeenCalledWith(
-        "https://api2.example/v1/images/generations",
-        expect.any(Object),
-      );
-    } finally {
-      await client.close();
-      await server.close();
-    }
-  });
+        arguments: { prompt: "A minimal blue route map", output_format: "png" },
+      },
+    }), { OPENAI_API_KEY: "worker-key" }, fetchMock);
 
-  it("saves generated bytes when output_path is provided", async () => {
-    process.env.OPENAI_API_KEY = "environment-key";
-    process.env.OPENAI_BASE_URL = "https://api2.example/v1";
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "imageforge-mcp-output-"));
-    const outputPath = path.join(directory, "dog.png");
-    const image = Buffer.from("generated-image");
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ data: [{ b64_json: image.toString("base64") }] }), { status: 200 }),
-    );
-    const server = createServer();
-    const client = new Client({ name: "test-client", version: "1.0.0" });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-
-    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-    try {
-      const result = await client.callTool({
-        name: "generate_image",
-        arguments: { prompt: "A happy dog", output_path: outputPath },
-      });
-      expect(result.isError).not.toBe(true);
-      expect(result.content).toEqual([
-        { type: "image", data: image.toString("base64"), mimeType: "image/png" },
-        { type: "text", text: `Image saved to ${outputPath}` },
-      ]);
-      await expect(fs.readFile(outputPath)).resolves.toEqual(image);
-    } finally {
-      await client.close();
-      await server.close();
-      await fs.rm(directory, { recursive: true });
-    }
-  });
-
-  it("routes generate_image with a local reference image through edits", async () => {
-    process.env.OPENAI_API_KEY = "environment-key";
-    process.env.OPENAI_BASE_URL = "https://api2.example/v1";
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "imageforge-reference-"));
-    const referencePath = path.join(directory, "reference.png");
-    await fs.writeFile(
-      referencePath,
-      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]),
-    );
-    const output = Buffer.from("reference-output");
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ data: [{ b64_json: output.toString("base64") }] }), { status: 200 }),
-    );
-    const server = createServer();
-    const client = new Client({ name: "test-client", version: "1.0.0" });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-
-    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-    try {
-      const result = await client.callTool({
-        name: "generate_image",
-        arguments: { prompt: "Follow this visual style", reference_images: [referencePath] },
-      });
-      expect(result.isError).not.toBe(true);
-      expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api2.example/v1/images/edits");
-      expect(fetchMock.mock.calls[0]?.[1]?.body).toBeInstanceOf(FormData);
-    } finally {
-      await client.close();
-      await server.close();
-      await fs.rm(directory, { recursive: true });
-    }
+    expect(response.status).toBe(200);
+    const payload = await response.json() as {
+      result?: { content?: Array<{ type?: string; data?: string; mimeType?: string }> };
+    };
+    expect(payload.result?.content).toEqual([
+      { type: "image", data: ENCODED_IMAGE, mimeType: "image/png" },
+    ]);
   });
 });

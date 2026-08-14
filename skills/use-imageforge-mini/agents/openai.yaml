@@ -1,0 +1,14 @@
+interface:
+  display_name: "使用 ImageForge Mini"
+  short_description: "通过 Worker 版 gpt-image-2 MCP 生成和编辑图片"
+  default_prompt: "使用 $use-imageforge-mini 通过远程图片 URL 生成或编辑图片。"
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "image_generate_mini"
+      description: "Deployed ImageForge Mini server providing generate_image and edit_image"
+      transport: "streamable_http"
+
+policy:
+  allow_implicit_invocation: true

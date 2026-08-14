@@ -3,4 +3,5 @@
 node_modules/
 dist/
 coverage/
+.wrangler/
 .codex/config.toml
