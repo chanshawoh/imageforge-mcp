@@ -17,9 +17,10 @@ A lightweight TypeScript MCP server for generating and editing images with `gpt-
 - Editing one or more existing images
 - Local absolute paths and HTTP(S) URLs as image inputs
 - PNG, JPEG, and WebP input and output
-- Up to 16 input images, with a 50 MB limit per image
+- Up to 16 input images, with a 50 MB limit per image and a 200 MB combined limit
 - Optional local output path with automatic parent-directory creation
-- Safe URL validation against loopback, link-local, and private network targets
+- URL validation against non-public network targets, with DNS addresses pinned to the actual connection
+- Bounded input loading concurrency
 - stdio transport
 
 ## OpenAI-compatible CPA and gateway support
@@ -59,7 +60,8 @@ For production use, start the published npm package with `npx`. No repository cl
       "args": ["-y", "imageforge-mcp"],
       "env": {
         "OPENAI_API_KEY": "your-token",
-        "OPENAI_IMAGE_MODEL": "gpt-image-2"
+        "OPENAI_IMAGE_MODEL": "gpt-image-2",
+        "IMAGEFORGE_INPUT_CONCURRENCY": "4"
       }
     }
   }
@@ -76,6 +78,10 @@ For production use, start the published npm package with `npx`. No repository cl
 
 The value must point to the gateway's `/v1` root. ImageForge MCP appends `/images/generations` or `/images/edits` as required.
 
+`IMAGEFORGE_INPUT_CONCURRENCY` optionally controls how many local or remote input images are loaded at once. It defaults to `4`, must be a positive integer, and is capped at the per-call limit of `16` input images. The combined input size remains capped at 200 MB.
+
+DNS safety checks are enabled by default. Set `IMAGEFORGE_SKIP_DNS_SAFETY_CHECKS=true` only when private-network or DNS-proxy image URLs must be supported. This disables non-public address rejection and DNS pinning for every redirect hop, which can expose the MCP process to SSRF. HTTP(S)-only URLs, the credential restriction, redirect limit, size limits, and image signature validation remain enforced. Accepted true values are `true`, `1`, `yes`, and `on`; false values are `false`, `0`, `no`, and `off`.
+
 Do not commit real API keys to Git or write them into shared configuration files.
 
 ## Codex local development configuration
@@ -87,7 +93,7 @@ Create a project-scoped `.codex/config.toml` using paths that match your machine
 command = "/absolute/path/to/node"
 args = ["/absolute/path/to/ImageForgeMCP/dist/index.js"]
 cwd = "/absolute/path/to/ImageForgeMCP"
-env_vars = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_IMAGE_MODEL"]
+env_vars = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_IMAGE_MODEL", "IMAGEFORGE_INPUT_CONCURRENCY", "IMAGEFORGE_SKIP_DNS_SAFETY_CHECKS"]
 startup_timeout_sec = 10
 tool_timeout_sec = 300
 enabled = true
@@ -100,6 +106,7 @@ Export the environment variables before starting Codex:
 export OPENAI_API_KEY="your-gateway-token"
 export OPENAI_BASE_URL="https://your-openai-compatible-gateway.example/v1"
 export OPENAI_IMAGE_MODEL="gpt-image-2"
+export IMAGEFORGE_INPUT_CONCURRENCY="4"
 
 cd /absolute/path/to/ImageForgeMCP
 codex app
@@ -143,7 +150,7 @@ Without `reference_images`, the tool uses `/images/generations`. With reference 
 | `prompt` | Yes | Editing instructions |
 | `input_images` | Yes | 1–16 local absolute paths or HTTP(S) URLs |
 
-Local images are read directly. URL images are downloaded and validated before upload. URLs resolving to loopback, link-local, or private addresses are rejected.
+Local images are read directly. URL images are downloaded and validated before upload. Every redirect target is revalidated, non-public addresses are rejected, and the validated DNS results are pinned to the actual connection to prevent DNS rebinding between validation and download.
 
 Configuration precedence is: tool arguments, environment variables, then built-in defaults.
 
@@ -183,9 +190,10 @@ ImageForge MCP 是一个轻量的 TypeScript MCP 图片生成与编辑服务，�
 - 支持一张或多张图片编辑
 - 输入图片支持本地绝对路径和 HTTP(S) URL
 - 输入与输出支持 PNG、JPEG、WebP
-- 最多 16 张输入图片，每张不超过 50 MB
+- 最多 16 张输入图片，每张不超过 50 MB，单次调用合计不超过 200 MB
 - 支持通过 `output_path` 保存到本地，并自动创建父目录
-- URL 安全校验，拒绝访问环回、链路本地和私有网络地址
+- URL 安全校验，拒绝非公网地址，并将校验后的 DNS 地址固定到实际连接
+- 输入图片加载并发受控
 - stdio Transport
 
 ## OpenAI 兼容 CPA 与网关
@@ -225,7 +233,8 @@ npm run build
       "args": ["-y", "imageforge-mcp"],
       "env": {
         "OPENAI_API_KEY": "你的令牌",
-        "OPENAI_IMAGE_MODEL": "gpt-image-2"
+        "OPENAI_IMAGE_MODEL": "gpt-image-2",
+        "IMAGEFORGE_INPUT_CONCURRENCY": "4"
       }
     }
   }
@@ -242,6 +251,10 @@ npm run build
 
 地址应填写到网关的 `/v1` 根路径为止，服务会根据请求追加 `/images/generations` 或 `/images/edits`。
 
+`IMAGEFORGE_INPUT_CONCURRENCY` 可选，用于控制同时加载的本地或远程输入图片数量。默认值为 `4`，必须是正整数，并直接受单次最多 `16` 张输入图片的限制。单次调用的输入图片合计大小仍固定限制为 200 MB。
+
+DNS 安全检查默认启用。只有确实需要访问私有网络地址或 DNS 代理生成的图片地址时，才应设置 `IMAGEFORGE_SKIP_DNS_SAFETY_CHECKS=true`。启用后，每次重定向都不再执行非公网地址拦截和 DNS 地址固定，可能使 MCP 进程面临 SSRF 风险。HTTP(S) 协议限制、URL 凭据限制、重定向次数、图片大小和图片魔数校验仍然有效。真值支持 `true`、`1`、`yes`、`on`，假值支持 `false`、`0`、`no`、`off`。
+
 不要把真实 API Key 写入 Git 或其他共享配置文件。
 
 ## Codex 本地开发配置
@@ -253,7 +266,7 @@ npm run build
 command = "/你的/node/绝对路径"
 args = ["/你的/ImageForgeMCP/绝对路径/dist/index.js"]
 cwd = "/你的/ImageForgeMCP/绝对路径"
-env_vars = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_IMAGE_MODEL"]
+env_vars = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_IMAGE_MODEL", "IMAGEFORGE_INPUT_CONCURRENCY", "IMAGEFORGE_SKIP_DNS_SAFETY_CHECKS"]
 startup_timeout_sec = 10
 tool_timeout_sec = 300
 enabled = true
@@ -266,6 +279,7 @@ required = false
 export OPENAI_API_KEY="你的网关令牌"
 export OPENAI_BASE_URL="https://你的-OpenAI-兼容网关域名/v1"
 export OPENAI_IMAGE_MODEL="gpt-image-2"
+export IMAGEFORGE_INPUT_CONCURRENCY="4"
 
 cd /你的/ImageForgeMCP/绝对路径
 codex app
@@ -309,7 +323,7 @@ npm run build
 | `prompt` | 是 | 编辑指令 |
 | `input_images` | 是 | 1–16 张输入图片，支持本地绝对路径或 HTTP(S) URL |
 
-本地图片会直接读取；URL 图片会经过下载和安全校验后再上传。解析到环回、链路本地或私有地址的 URL 会被拒绝。
+本地图片会直接读取；URL 图片会经过下载和安全校验后再上传。每次重定向都会重新校验目标地址，非公网地址会被拒绝，同时会将校验后的 DNS 结果固定到实际连接，防止校验与下载之间发生 DNS Rebinding。
 
 配置优先级为：工具参数、环境变量、内置默认值。
 

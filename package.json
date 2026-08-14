@@ -23,6 +23,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "undici": "^6.28.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
