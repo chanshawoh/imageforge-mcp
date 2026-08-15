@@ -4,3 +4,4 @@ node_modules/
 dist/
 coverage/
 .codex/config.toml
+DEV_STATE.md
